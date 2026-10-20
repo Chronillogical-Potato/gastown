@@ -2,6 +2,8 @@ module github.com/steveyegge/gastown
 
 go 1.26.2
 
+toolchain go1.26.10
+
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/bubbles v1.0.0
