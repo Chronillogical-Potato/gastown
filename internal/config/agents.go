@@ -3,8 +3,10 @@ package config
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -560,9 +562,10 @@ func initRegistryLocked() {
 		Version: CurrentAgentRegistryVersion,
 		Agents:  make(map[string]*AgentPresetInfo),
 	}
-	// Copy built-in presets
+	// Deep-copy built-in presets so nothing reachable from the registry
+	// aliases builtinPresets.
 	for name, preset := range builtinPresets {
-		globalRegistry.Agents[string(name)] = preset
+		globalRegistry.Agents[string(name)] = cloneAgentPresetInfo(preset)
 	}
 	registryInitialized = true
 }
@@ -607,34 +610,32 @@ func loadAgentRegistryFromPathLocked(path string) error {
 	return nil
 }
 
+// cloneAgentPresetInfo returns a deep copy of src, or nil if src is nil.
+// Registry entries are only ever handed out as clones so callers cannot
+// mutate shared registry (or built-in preset) state.
 func cloneAgentPresetInfo(src *AgentPresetInfo) *AgentPresetInfo {
 	if src == nil {
 		return nil
 	}
 	clone := *src
-	if src.Args != nil {
-		clone.Args = append([]string(nil), src.Args...)
-	}
-	if src.Env != nil {
-		clone.Env = make(map[string]string, len(src.Env))
-		for k, v := range src.Env {
-			clone.Env[k] = v
-		}
-	}
-	if src.ProcessNames != nil {
-		clone.ProcessNames = append([]string(nil), src.ProcessNames...)
-	}
+	clone.Args = slices.Clone(src.Args)
+	clone.Env = maps.Clone(src.Env)
+	clone.ProcessNames = slices.Clone(src.ProcessNames)
 	if src.NonInteractive != nil {
 		nonInteractive := *src.NonInteractive
 		clone.NonInteractive = &nonInteractive
 	}
-	if src.ACP != nil {
-		acp := *src.ACP
-		if src.ACP.Args != nil {
-			acp.Args = append([]string(nil), src.ACP.Args...)
-		}
-		clone.ACP = &acp
+	clone.ACP = cloneACPConfig(src.ACP)
+	return &clone
+}
+
+// cloneACPConfig returns a deep copy of src, or nil if src is nil.
+func cloneACPConfig(src *ACPConfig) *ACPConfig {
+	if src == nil {
+		return nil
 	}
+	clone := *src
+	clone.Args = slices.Clone(src.Args)
 	return &clone
 }
 
@@ -673,22 +674,21 @@ func LoadRigAgentRegistry(path string) error {
 	return loadAgentRegistryFromPathLocked(path)
 }
 
-// GetAgentPreset returns the preset info for a given agent name.
-// Returns nil if the preset is not found.
+// GetAgentPreset returns a copy of the preset info for a given agent name.
+// Returns nil if the preset is not found. The caller owns the returned value;
+// modifying it does not affect the registry.
 func GetAgentPreset(name AgentPreset) *AgentPresetInfo {
-	registryMu.Lock()
-	initRegistryLocked()
-	defer registryMu.Unlock()
-	return globalRegistry.Agents[string(name)]
+	return GetAgentPresetByName(string(name))
 }
 
-// GetAgentPresetByName returns the preset info by string name.
-// Returns nil if not found, allowing caller to fall back to defaults.
+// GetAgentPresetByName returns a copy of the preset info by string name.
+// Returns nil if not found, allowing caller to fall back to defaults. The
+// caller owns the returned value; modifying it does not affect the registry.
 func GetAgentPresetByName(name string) *AgentPresetInfo {
 	registryMu.Lock()
 	initRegistryLocked()
 	defer registryMu.Unlock()
-	return globalRegistry.Agents[name]
+	return cloneAgentPresetInfo(globalRegistry.Agents[name])
 }
 
 // ListAgentPresets returns all known agent preset names.
@@ -859,7 +859,7 @@ func lookupProcessNamesByBinary(realBin string) []string {
 			continue
 		}
 		if preset.Command == realBin || filepath.Base(preset.Command) == realBin {
-			return preset.ProcessNames
+			return slices.Clone(preset.ProcessNames)
 		}
 	}
 	for _, preset := range builtinPresets {
@@ -867,7 +867,7 @@ func lookupProcessNamesByBinary(realBin string) []string {
 			continue
 		}
 		if preset.Command == realBin || filepath.Base(preset.Command) == realBin {
-			return preset.ProcessNames
+			return slices.Clone(preset.ProcessNames)
 		}
 	}
 	return nil
@@ -955,7 +955,7 @@ func ResolveProcessNames(agentName, command string, args ...string) []string {
 				filepath.Base(info.Command) == cmdBase ||
 				(info.Command == unwrappedCmdBase && strings.HasPrefix(cmdBase, "gt-")) ||
 				cmdBase == "") {
-			return info.ProcessNames
+			return slices.Clone(info.ProcessNames)
 		}
 	}
 
@@ -989,7 +989,7 @@ func ResolveProcessNames(agentName, command string, args ...string) []string {
 			if info.Command == command ||
 				filepath.Base(info.Command) == cmdBase ||
 				(strings.HasPrefix(cmdBase, "gt-") && filepath.Base(info.Command) == unwrappedCmdBase) {
-				return info.ProcessNames
+				return slices.Clone(info.ProcessNames)
 			}
 		}
 		// Unknown command — use the binary basename itself
@@ -1091,7 +1091,7 @@ func RegisterAgentForTesting(name string, info AgentPresetInfo) {
 	registryMu.Lock()
 	initRegistryLocked()
 	defer registryMu.Unlock()
-	globalRegistry.Agents[name] = &info
+	globalRegistry.Agents[name] = cloneAgentPresetInfo(&info)
 }
 
 // ResolveACPConfig determines the correct ACP configuration for an agent
@@ -1104,7 +1104,7 @@ func ResolveACPConfig(agentName, command string) *ACPConfig {
 
 	// 1. Check if agentName matches a registered preset with ACP config.
 	if info, ok := globalRegistry.Agents[agentName]; ok && info.ACP != nil && info.ACP.Command != "" {
-		return info.ACP
+		return cloneACPConfig(info.ACP)
 	}
 
 	// 2. Otherwise, find a registered preset whose Command matches and has ACP.
@@ -1112,7 +1112,7 @@ func ResolveACPConfig(agentName, command string) *ACPConfig {
 		cmdBase := filepath.Base(command)
 		for _, info := range globalRegistry.Agents {
 			if (info.Command == command || filepath.Base(info.Command) == cmdBase) && info.ACP != nil && info.ACP.Command != "" {
-				return info.ACP
+				return cloneACPConfig(info.ACP)
 			}
 		}
 	}

@@ -1207,8 +1207,7 @@ func TestBuildCrewStartupCommand(t *testing.T) {
 }
 
 func TestResolveAgentConfigWithOverride(t *testing.T) {
-	ResetRegistryForTesting()
-	t.Cleanup(ResetRegistryForTesting)
+	isolateAgentRegistry(t)
 	townRoot := t.TempDir()
 	rigPath := filepath.Join(townRoot, "testrig")
 
@@ -4992,22 +4991,12 @@ func TestBuildStartupCommand_SetsGTProcessNames(t *testing.T) {
 // This is a regression test for the bug where `gt deacon start --agent codex`
 // would still launch Claude if run from outside the town directory.
 func TestBuildStartupCommandWithAgentOverride_UsesOverrideWhenNoTownRoot(t *testing.T) {
-	t.Parallel()
-	ResetRegistryForTesting()
+	// Not parallel: changes the process working directory.
+	isolateAgentRegistry(t)
 
 	// Change to a directory that is definitely NOT in a Gas Town workspace
 	// by using a temp directory with no mayor/town.json
-	tmpDir := t.TempDir()
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd: %v", err)
-	}
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Chdir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(oldWd)
-	})
+	t.Chdir(t.TempDir())
 
 	// Call with rigPath="" (like deacon does) and agentOverride="codex"
 	cmd, err := BuildStartupCommandWithAgentOverride(

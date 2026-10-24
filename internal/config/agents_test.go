@@ -169,6 +169,8 @@ func TestIsKnownPreset(t *testing.T) {
 }
 
 func TestLoadAgentRegistry(t *testing.T) {
+	isolateAgentRegistry(t)
+
 	// Create temp directory for test config
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "agents.json")
@@ -194,9 +196,6 @@ func TestLoadAgentRegistry(t *testing.T) {
 		t.Fatalf("failed to write test config: %v", err)
 	}
 
-	// Reset global registry for test isolation
-	ResetRegistryForTesting()
-
 	// Load should succeed
 	if err := LoadAgentRegistry(configPath); err != nil {
 		t.Fatalf("LoadAgentRegistry failed: %v", err)
@@ -217,9 +216,6 @@ func TestLoadAgentRegistry(t *testing.T) {
 	if claude == nil {
 		t.Fatal("built-in 'claude' not found after loading registry")
 	}
-
-	// Reset for other tests
-	ResetRegistryForTesting()
 }
 
 func TestGetProcessNamesRespectsRegistryOverride(t *testing.T) {
@@ -227,8 +223,7 @@ func TestGetProcessNamesRespectsRegistryOverride(t *testing.T) {
 	// GetProcessNames so that liveness checks (IsAgentAlive, daemon heartbeat,
 	// cleanup) respect user-configured process names.
 	// Real-world case: NixOS wraps claude as ".claude-unwrapped".
-	ResetRegistryForTesting()
-	t.Cleanup(ResetRegistryForTesting)
+	isolateAgentRegistry(t)
 
 	// Before loading any registry, GetProcessNames returns the builtin default.
 	builtinNames := GetProcessNames("claude")
@@ -278,9 +273,8 @@ func TestGetProcessNamesRespectsRegistryOverride(t *testing.T) {
 }
 
 func TestResolveProcessNames(t *testing.T) {
-	t.Parallel()
-	ResetRegistryForTesting()
-	t.Cleanup(ResetRegistryForTesting)
+	// Not parallel: subtests register custom presets in the global registry.
+	isolateAgentRegistry(t)
 
 	tests := []struct {
 		name      string
@@ -1002,9 +996,7 @@ func TestDefaultRigAgentRegistryPath(t *testing.T) {
 
 // TestLoadRigAgentRegistry verifies that rig-level agent registry is loaded correctly.
 func TestLoadRigAgentRegistry(t *testing.T) {
-	// Reset registry for test isolation
-	ResetRegistryForTesting()
-	t.Cleanup(ResetRegistryForTesting)
+	isolateAgentRegistry(t)
 
 	tmpDir := t.TempDir()
 	registryPath := filepath.Join(tmpDir, "settings", "agents.json")
@@ -1516,8 +1508,6 @@ func TestAllHookSupportingAgentsHaveHookFields(t *testing.T) {
 
 func TestResolveACPConfig(t *testing.T) {
 	t.Parallel()
-	ResetRegistryForTesting()
-	t.Cleanup(ResetRegistryForTesting)
 
 	tests := []struct {
 		name      string
@@ -1577,8 +1567,7 @@ func TestResolveACPConfig(t *testing.T) {
 }
 
 func TestSupportsACPWithCustomAgent(t *testing.T) {
-	ResetRegistryForTesting()
-	t.Cleanup(ResetRegistryForTesting)
+	isolateAgentRegistry(t)
 
 	// Register a custom agent that uses 'opencode' command but doesn't have ACP config
 	RegisterAgentForTesting("custom-model", AgentPresetInfo{
@@ -1601,8 +1590,6 @@ func TestSupportsACPWithCustomAgent(t *testing.T) {
 
 func TestGetACPCommand(t *testing.T) {
 	t.Parallel()
-	ResetRegistryForTesting()
-	t.Cleanup(ResetRegistryForTesting)
 
 	tests := []struct {
 		agentName string
@@ -1631,8 +1618,7 @@ func TestGetACPCommand(t *testing.T) {
 }
 
 func TestACPConfig(t *testing.T) {
-	ResetRegistryForTesting()
-	t.Cleanup(ResetRegistryForTesting)
+	isolateAgentRegistry(t)
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "agents.json")
@@ -1698,8 +1684,7 @@ func TestACPConfig(t *testing.T) {
 // - Subcommand mode: Agent has ACP as a subcommand
 // - Flag mode: Agent uses flags to enable ACP
 func TestACPModes(t *testing.T) {
-	ResetRegistryForTesting()
-	t.Cleanup(ResetRegistryForTesting)
+	isolateAgentRegistry(t)
 
 	tests := []struct {
 		name     string
