@@ -115,10 +115,10 @@ var (
 // contentLimits caches configurable truncation limits parsed from env at first use.
 // Env vars are read once — changing them at runtime has no effect.
 var (
-	limitsOnce       sync.Once
-	agentContentLim  int // GT_LOG_AGENT_CONTENT_LIMIT, default 512
-	bdContentLim     int // GT_LOG_BD_CONTENT_LIMIT, default 2048
-	paneContentLim   int // GT_LOG_PANE_CONTENT_LIMIT, default 8192
+	limitsOnce      sync.Once
+	agentContentLim int // GT_LOG_AGENT_CONTENT_LIMIT, default 512
+	bdContentLim    int // GT_LOG_BD_CONTENT_LIMIT, default 2048
+	paneContentLim  int // GT_LOG_PANE_CONTENT_LIMIT, default 8192
 )
 
 func initContentLimits() {
@@ -238,16 +238,16 @@ func statusStr(err error) string {
 // GASTOWN run identifier for waterfall correlation.
 func addRunID(ctx context.Context, r *otellog.Record) {
 	if runID := RunIDFromCtx(ctx); runID != "" {
-		r.AddAttributes(otellog.String("run.id", runID))
+		r.AddAttributes(attribute.String("run.id", runID))
 	}
 }
 
 // emit sends an OTel log event with the given body and key-value attributes.
 // Automatically injects run.id from ctx when present.
-func emit(ctx context.Context, body string, sev otellog.Severity, attrs ...otellog.KeyValue) {
+func emit(ctx context.Context, body string, sev otellog.Severity, attrs ...attribute.KeyValue) {
 	logger := global.GetLoggerProvider().Logger(loggerName)
 	var r otellog.Record
-	r.SetBody(otellog.StringValue(body))
+	r.SetBody(attribute.StringValue(body))
 	r.SetSeverity(sev)
 	r.AddAttributes(attrs...)
 	addRunID(ctx, &r)
@@ -255,11 +255,11 @@ func emit(ctx context.Context, body string, sev otellog.Severity, attrs ...otell
 }
 
 // errKV returns a log KeyValue with the error message, or empty string if nil.
-func errKV(err error) otellog.KeyValue {
+func errKV(err error) attribute.KeyValue {
 	if err != nil {
-		return otellog.String("error", err.Error())
+		return attribute.String("error", err.Error())
 	}
-	return otellog.String("error", "")
+	return attribute.String("error", "")
 }
 
 // severity returns SeverityInfo on success, SeverityError on failure.
@@ -306,11 +306,11 @@ func RecordBDCall(ctx context.Context, args []string, durationMs float64, err er
 	)
 	inst.bdTotal.Add(ctx, 1, attrs)
 	inst.bdDurationHist.Record(ctx, durationMs, attrs)
-	kvs := []otellog.KeyValue{
-		otellog.String("subcommand", subcommand),
-		otellog.String("args", strings.Join(args, " ")),
-		otellog.Float64("duration_ms", durationMs),
-		otellog.String("status", status),
+	kvs := []attribute.KeyValue{
+		attribute.String("subcommand", subcommand),
+		attribute.String("args", strings.Join(args, " ")),
+		attribute.Float64("duration_ms", durationMs),
+		attribute.String("status", status),
 		errKV(err),
 	}
 	// stdout/stderr are opt-in (may contain tokens or PII returned by bd).
@@ -318,8 +318,8 @@ func RecordBDCall(ctx context.Context, args []string, durationMs float64, err er
 	if os.Getenv("GT_LOG_BD_OUTPUT") == "true" {
 		initContentLimits()
 		kvs = append(kvs,
-			otellog.String("stdout", truncateOutput(string(stdout), bdContentLim)),
-			otellog.String("stderr", truncateOutput(stderr, bdContentLim)),
+			attribute.String("stdout", truncateOutput(string(stdout), bdContentLim)),
+			attribute.String("stderr", truncateOutput(stderr, bdContentLim)),
 		)
 	}
 	emit(ctx, "bd.call", severity(err), kvs...)
@@ -336,9 +336,9 @@ func RecordSessionStart(ctx context.Context, sessionID, role string, err error) 
 		),
 	)
 	emit(ctx, "session.start", severity(err),
-		otellog.String("session_id", sessionID),
-		otellog.String("role", role),
-		otellog.String("status", status),
+		attribute.String("session_id", sessionID),
+		attribute.String("role", role),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -351,8 +351,8 @@ func RecordSessionStop(ctx context.Context, sessionID string, err error) {
 		metric.WithAttributes(attribute.String("status", status)),
 	)
 	emit(ctx, "session.stop", severity(err),
-		otellog.String("session_id", sessionID),
-		otellog.String("status", status),
+		attribute.String("session_id", sessionID),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -366,15 +366,15 @@ func RecordPromptSend(ctx context.Context, session, keys string, debounceMs int,
 	inst.promptTotal.Add(ctx, 1,
 		metric.WithAttributes(attribute.String("status", status)),
 	)
-	kvs := []otellog.KeyValue{
-		otellog.String("session", session),
-		otellog.Int64("keys_len", int64(len(keys))),
-		otellog.Int64("debounce_ms", int64(debounceMs)),
-		otellog.String("status", status),
+	kvs := []attribute.KeyValue{
+		attribute.String("session", session),
+		attribute.Int64("keys_len", int64(len(keys))),
+		attribute.Int64("debounce_ms", int64(debounceMs)),
+		attribute.String("status", status),
 		errKV(err),
 	}
 	if os.Getenv("GT_LOG_PROMPT_KEYS") == "true" {
-		kvs = append(kvs, otellog.String("keys", truncateOutput(keys, 256)))
+		kvs = append(kvs, attribute.String("keys", truncateOutput(keys, 256)))
 	}
 	emit(ctx, "prompt.send", severity(err), kvs...)
 }
@@ -421,17 +421,17 @@ func RecordAgentInstantiate(ctx context.Context, info AgentInstantiateInfo) {
 		),
 	)
 	emit(ctx, "agent.instantiate", otellog.SeverityInfo,
-		otellog.String("run.id", info.RunID),
-		otellog.String("instance", instanceID(info.TownRoot)),
-		otellog.String("town_root", info.TownRoot),
-		otellog.String("agent_type", info.AgentType),
-		otellog.String("role", info.Role),
-		otellog.String("agent_name", info.AgentName),
-		otellog.String("session_id", info.SessionID),
-		otellog.String("rig", info.RigName),
-		otellog.String("issue_id", info.IssueID),
-		otellog.String("git_branch", info.GitBranch),
-		otellog.String("git_commit", info.GitCommit),
+		attribute.String("run.id", info.RunID),
+		attribute.String("instance", instanceID(info.TownRoot)),
+		attribute.String("town_root", info.TownRoot),
+		attribute.String("agent_type", info.AgentType),
+		attribute.String("role", info.Role),
+		attribute.String("agent_name", info.AgentName),
+		attribute.String("session_id", info.SessionID),
+		attribute.String("rig", info.RigName),
+		attribute.String("issue_id", info.IssueID),
+		attribute.String("git_branch", info.GitBranch),
+		attribute.String("git_commit", info.GitCommit),
 	)
 }
 
@@ -448,20 +448,20 @@ func RecordMailMessage(ctx context.Context, operation string, msg MailMessageInf
 			attribute.String("operation", operation),
 		),
 	)
-	kvs := []otellog.KeyValue{
-		otellog.String("operation", operation),
-		otellog.String("msg.id", msg.ID),
-		otellog.String("msg.from", msg.From),
-		otellog.String("msg.to", msg.To),
-		otellog.String("msg.subject", msg.Subject),
-		otellog.String("msg.thread_id", msg.ThreadID),
-		otellog.String("msg.priority", msg.Priority),
-		otellog.String("msg.type", msg.MsgType),
-		otellog.String("status", status),
+	kvs := []attribute.KeyValue{
+		attribute.String("operation", operation),
+		attribute.String("msg.id", msg.ID),
+		attribute.String("msg.from", msg.From),
+		attribute.String("msg.to", msg.To),
+		attribute.String("msg.subject", msg.Subject),
+		attribute.String("msg.thread_id", msg.ThreadID),
+		attribute.String("msg.priority", msg.Priority),
+		attribute.String("msg.type", msg.MsgType),
+		attribute.String("status", status),
 		errKV(err),
 	}
 	if os.Getenv("GT_LOG_MAIL_BODY") == "true" {
-		kvs = append(kvs, otellog.String("msg.body", truncateOutput(msg.Body, 256)))
+		kvs = append(kvs, attribute.String("msg.body", truncateOutput(msg.Body, 256)))
 	}
 	emit(ctx, "mail", severity(err), kvs...)
 }
@@ -478,9 +478,9 @@ func RecordPrime(ctx context.Context, role string, hookMode bool, err error) {
 		),
 	)
 	emit(ctx, "prime", severity(err),
-		otellog.String("role", role),
-		otellog.Bool("hook_mode", hookMode),
-		otellog.String("status", status),
+		attribute.String("role", role),
+		attribute.Bool("hook_mode", hookMode),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -495,9 +495,9 @@ func RecordPrimeContext(ctx context.Context, formula, role string, hookMode bool
 	}
 	initInstruments()
 	emit(ctx, "prime.context", otellog.SeverityInfo,
-		otellog.String("role", role),
-		otellog.Bool("hook_mode", hookMode),
-		otellog.String("formula", formula),
+		attribute.String("role", role),
+		attribute.Bool("hook_mode", hookMode),
+		attribute.String("formula", formula),
 	)
 }
 
@@ -516,10 +516,10 @@ func RecordAgentStateChange(ctx context.Context, agentID, newState string, hookB
 		),
 	)
 	emit(ctx, "agent.state_change", severity(err),
-		otellog.String("agent_id", agentID),
-		otellog.String("new_state", newState),
-		otellog.String("hook_bead", hookBeadID),
-		otellog.String("status", status),
+		attribute.String("agent_id", agentID),
+		attribute.String("new_state", newState),
+		attribute.String("hook_bead", hookBeadID),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -532,8 +532,8 @@ func RecordPolecatSpawn(ctx context.Context, name string, err error) {
 		metric.WithAttributes(attribute.String("status", status)),
 	)
 	emit(ctx, "polecat.spawn", severity(err),
-		otellog.String("name", name),
-		otellog.String("status", status),
+		attribute.String("name", name),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -546,8 +546,8 @@ func RecordPolecatRemove(ctx context.Context, name string, err error) {
 		metric.WithAttributes(attribute.String("status", status)),
 	)
 	emit(ctx, "polecat.remove", severity(err),
-		otellog.String("name", name),
-		otellog.String("status", status),
+		attribute.String("name", name),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -560,9 +560,9 @@ func RecordSling(ctx context.Context, bead, target string, err error) {
 		metric.WithAttributes(attribute.String("status", status)),
 	)
 	emit(ctx, "sling", severity(err),
-		otellog.String("bead", bead),
-		otellog.String("target", target),
-		otellog.String("status", status),
+		attribute.String("bead", bead),
+		attribute.String("target", target),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -578,8 +578,8 @@ func RecordMail(ctx context.Context, operation string, err error) {
 		),
 	)
 	emit(ctx, "mail", severity(err),
-		otellog.String("operation", operation),
-		otellog.String("status", status),
+		attribute.String("operation", operation),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -592,8 +592,8 @@ func RecordNudge(ctx context.Context, target string, err error) {
 		metric.WithAttributes(attribute.String("status", status)),
 	)
 	emit(ctx, "nudge", severity(err),
-		otellog.String("target", target),
-		otellog.String("status", status),
+		attribute.String("target", target),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -610,8 +610,8 @@ func RecordDone(ctx context.Context, exitType string, err error) {
 		),
 	)
 	emit(ctx, "done", severity(err),
-		otellog.String("exit_type", exitType),
-		otellog.String("status", status),
+		attribute.String("exit_type", exitType),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -624,7 +624,7 @@ func RecordDaemonRestart(ctx context.Context, agentType string) {
 		metric.WithAttributes(attribute.String("agent_type", agentType)),
 	)
 	emit(ctx, "daemon.restart", otellog.SeverityInfo,
-		otellog.String("agent_type", agentType),
+		attribute.String("agent_type", agentType),
 	)
 }
 
@@ -639,9 +639,9 @@ func RecordFormulaInstantiate(ctx context.Context, formulaName, beadID string, e
 		),
 	)
 	emit(ctx, "formula.instantiate", severity(err),
-		otellog.String("formula_name", formulaName),
-		otellog.String("bead_id", beadID),
-		otellog.String("status", status),
+		attribute.String("formula_name", formulaName),
+		attribute.String("bead_id", beadID),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -654,8 +654,8 @@ func RecordConvoyCreate(ctx context.Context, beadID string, err error) {
 		metric.WithAttributes(attribute.String("status", status)),
 	)
 	emit(ctx, "convoy.create", severity(err),
-		otellog.String("bead_id", beadID),
-		otellog.String("status", status),
+		attribute.String("bead_id", beadID),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -674,15 +674,15 @@ func RecordAgentTokenUsage(ctx context.Context, sessionID, nativeSessionID strin
 	))
 	logger := global.GetLoggerProvider().Logger(loggerName)
 	var r otellog.Record
-	r.SetBody(otellog.StringValue("agent.usage"))
+	r.SetBody(attribute.StringValue("agent.usage"))
 	r.SetSeverity(otellog.SeverityInfo)
 	r.AddAttributes(
-		otellog.String("session", sessionID),
-		otellog.String("native_session_id", nativeSessionID),
-		otellog.Int64("input_tokens", int64(inputTokens)),
-		otellog.Int64("output_tokens", int64(outputTokens)),
-		otellog.Int64("cache_read_tokens", int64(cacheReadTokens)),
-		otellog.Int64("cache_creation_tokens", int64(cacheCreationTokens)),
+		attribute.String("session", sessionID),
+		attribute.String("native_session_id", nativeSessionID),
+		attribute.Int64("input_tokens", int64(inputTokens)),
+		attribute.Int64("output_tokens", int64(outputTokens)),
+		attribute.Int64("cache_read_tokens", int64(cacheReadTokens)),
+		attribute.Int64("cache_creation_tokens", int64(cacheCreationTokens)),
 	)
 	addRunID(ctx, &r)
 	logger.Emit(ctx, r)
@@ -699,8 +699,8 @@ func RecordMolCook(ctx context.Context, formulaName string, err error) {
 		),
 	)
 	emit(ctx, "mol.cook", severity(err),
-		otellog.String("formula_name", formulaName),
-		otellog.String("status", status),
+		attribute.String("formula_name", formulaName),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -717,10 +717,10 @@ func RecordMolWisp(ctx context.Context, formulaName, wispRootID, beadID string, 
 		),
 	)
 	emit(ctx, "mol.wisp", severity(err),
-		otellog.String("formula_name", formulaName),
-		otellog.String("wisp_root_id", wispRootID),
-		otellog.String("bead_id", beadID),
-		otellog.String("status", status),
+		attribute.String("formula_name", formulaName),
+		attribute.String("wisp_root_id", wispRootID),
+		attribute.String("bead_id", beadID),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -735,11 +735,11 @@ func RecordMolSquash(ctx context.Context, molID string, doneSteps, totalSteps in
 		metric.WithAttributes(attribute.String("status", status)),
 	)
 	emit(ctx, "mol.squash", severity(err),
-		otellog.String("mol_id", molID),
-		otellog.Int64("done_steps", int64(doneSteps)),
-		otellog.Int64("total_steps", int64(totalSteps)),
-		otellog.Bool("digest_created", digestCreated),
-		otellog.String("status", status),
+		attribute.String("mol_id", molID),
+		attribute.Int64("done_steps", int64(doneSteps)),
+		attribute.Int64("total_steps", int64(totalSteps)),
+		attribute.Bool("digest_created", digestCreated),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -753,9 +753,9 @@ func RecordMolBurn(ctx context.Context, molID string, childrenClosed int, err er
 		metric.WithAttributes(attribute.String("status", status)),
 	)
 	emit(ctx, "mol.burn", severity(err),
-		otellog.String("mol_id", molID),
-		otellog.Int64("children_closed", int64(childrenClosed)),
-		otellog.String("status", status),
+		attribute.String("mol_id", molID),
+		attribute.Int64("children_closed", int64(childrenClosed)),
+		attribute.String("status", status),
 		errKV(err),
 	)
 }
@@ -769,9 +769,9 @@ func RecordBeadCreate(ctx context.Context, beadID, parentID, molSource string) {
 		metric.WithAttributes(attribute.String("mol_source", molSource)),
 	)
 	emit(ctx, "bead.create", otellog.SeverityInfo,
-		otellog.String("bead_id", beadID),
-		otellog.String("parent_id", parentID),
-		otellog.String("mol_source", molSource),
+		attribute.String("bead_id", beadID),
+		attribute.String("parent_id", parentID),
+		attribute.String("mol_source", molSource),
 	)
 }
 
@@ -785,8 +785,8 @@ func RecordPaneOutput(ctx context.Context, sessionID, content string) {
 		attribute.String("session", sessionID),
 	))
 	emit(ctx, "pane.output", otellog.SeverityInfo,
-		otellog.String("session", sessionID),
-		otellog.String("content", truncateOutput(content, paneContentLim)),
+		attribute.String("session", sessionID),
+		attribute.String("content", truncateOutput(content, paneContentLim)),
 	)
 }
 
@@ -812,7 +812,7 @@ func RecordAgentEvent(ctx context.Context, sessionID, agentType, eventType, role
 	))
 	logger := global.GetLoggerProvider().Logger(loggerName)
 	var r otellog.Record
-	r.SetBody(otellog.StringValue("agent.event"))
+	r.SetBody(attribute.StringValue("agent.event"))
 	r.SetSeverity(otellog.SeverityInfo)
 	if !ts.IsZero() {
 		r.SetTimestamp(ts)
@@ -821,12 +821,12 @@ func RecordAgentEvent(ctx context.Context, sessionID, agentType, eventType, role
 	// Limit is cached at first call; default 512 bytes. GT_LOG_AGENT_CONTENT_LIMIT=0 disables.
 	initContentLimits()
 	r.AddAttributes(
-		otellog.String("session", sessionID),
-		otellog.String("agent_type", agentType),
-		otellog.String("event_type", eventType),
-		otellog.String("role", role),
-		otellog.String("content", truncateOutput(content, agentContentLim)),
-		otellog.String("native_session_id", nativeSessionID),
+		attribute.String("session", sessionID),
+		attribute.String("agent_type", agentType),
+		attribute.String("event_type", eventType),
+		attribute.String("role", role),
+		attribute.String("content", truncateOutput(content, agentContentLim)),
+		attribute.String("native_session_id", nativeSessionID),
 	)
 	addRunID(ctx, &r)
 	logger.Emit(ctx, r)
