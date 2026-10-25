@@ -9,9 +9,9 @@
 #   docker build -f Dockerfile.e2e -t gastown-test .
 #   docker run --rm gastown-test
 
-FROM golang:1.26-alpine
+FROM golang:1.27-alpine
 
-ARG DOLT_VERSION=2.0.7
+ARG DOLT_VERSION=2.6.0
 ARG BD_VERSION=v0.57.0
 
 # Install dependencies including CGO build requirements for beads daemon

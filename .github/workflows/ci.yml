@@ -83,7 +83,7 @@ jobs:
 
       - name: Install Dolt
         run: |
-          curl -L https://github.com/dolthub/dolt/releases/download/v2.0.7/install.sh | sudo bash
+          curl -L https://github.com/dolthub/dolt/releases/download/v2.6.0/install.sh | sudo bash
 
       - name: Set up beads (bd)
         uses: ./.github/actions/setup-bd
@@ -167,10 +167,10 @@ jobs:
 
       - name: Install Dolt
         run: |
-          curl -L https://github.com/dolthub/dolt/releases/download/v2.0.7/install.sh | sudo bash
+          curl -L https://github.com/dolthub/dolt/releases/download/v2.6.0/install.sh | sudo bash
 
       - name: Pre-pull Dolt Docker image
-        run: docker pull dolthub/dolt-sql-server:2.0.7
+        run: docker pull dolthub/dolt-sql-server:2.6.0
 
       - name: Set up beads (bd)
         uses: ./.github/actions/setup-bd

@@ -3,7 +3,7 @@
 FROM docker/sandbox-templates:claude-code
 
 ARG GO_VERSION=1.26.10
-ARG DOLT_VERSION=2.0.7
+ARG DOLT_VERSION=2.6.0
 
 USER root
 
