@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dolt 2.6.0 is now the minimum supported version** (was 2.0.7). `gt install`
+  (with beads) and `gt doctor` refuse an older `dolt` binary, naming the
+  installed version, the required 2.6.0, and how to upgrade
+  (`brew upgrade dolt`, or reinstall from
+  https://github.com/dolthub/dolt#installation). The hosted and per-project
+  Dolt servers run 2.6.0, whose storage older Dolt releases may not read, so
+  mixing binaries on a shared `.dolt-data` store is unsafe. Dolt 2.6.0 also
+  changed `dolt merge` to walk the full commit graph: a long-lived branch that
+  merged more than once can now report a conflict that 2.5.x resolved silently
+  by taking the newer change (`gt wl sync` / `gt wl show` run `dolt merge`).
+
 ## [1.2.1] - 2026-06-06
 
 ### Fixed
